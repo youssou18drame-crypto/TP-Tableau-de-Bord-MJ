@@ -19,11 +19,13 @@ TP-Tableau-de-Bord-MJ/
 
 Node.js 20.9+ (de préférence une version LTS compatible avec Next.js), npm, une base PostgreSQL accessible (Neon ou locale). Tous les fichiers `.env` restent **hors GitHub**.
 
-## 2. Préparer la base PostgreSQL
+## 2. Base de données PostgreSQL (Neon)
 
-Exécuter `database/init.sql` une seule fois sur une base de test vide, à l'aide de psql ou de l'éditeur SQL Neon.
+**Une base de données PostgreSQL existe déjà sur Neon** pour ce TP. Il n'est donc **pas nécessaire de créer une base locale** si vous utilisez les paramètres de connexion transmis en privé dans le fichier `backend/.env` (`DATABASE_URL`).
 
-**Si les tables du TP précédent existent déjà, conserver leurs données et vérifier leur structure avant d'exécuter le SQL.** Le script crée seulement les tables absentes.
+Le fichier `database/init.sql` est également fourni **si vous souhaitez recréer les tables sur une nouvelle base PostgreSQL**, par exemple pour une installation indépendante ou des tests. Il peut être exécuté avec psql ou l'éditeur SQL Neon.
+
+**Important :** sur la base Neon déjà configurée, les tables et les données du TP existent déjà. Il n'est pas nécessaire d'exécuter le script SQL pour lancer l'application avec cette base. Si vous utilisez une autre base, lancez le script avant de créer le compte de test.
 
 ## 3. Configurer et lancer le backend
 
