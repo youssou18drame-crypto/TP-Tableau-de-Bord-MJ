@@ -4,6 +4,26 @@ import { useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
+async function lireJsonValide(reponse) {
+  if (!reponse.ok) {
+    let message = "Connexion impossible. Vérifie tes identifiants ou réessaie.";
+    if (reponse.headers.get("content-type")?.includes("application/json")) {
+      try {
+        const details = await reponse.json();
+        if (typeof details?.erreur === "string") message = details.erreur;
+      } catch {
+        // Ne pas afficher les erreurs techniques de lecture du JSON.
+      }
+    }
+    throw new Error(message);
+  }
+  try {
+    return await reponse.json();
+  } catch {
+    throw new Error("Réponse inattendue du serveur. Réessaie.");
+  }
+}
+
 export default function FormulaireLogin({ onLoginSuccess }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,19 +41,18 @@ export default function FormulaireLogin({ onLoginSuccess }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password })
       });
-      const donnees = await reponse.json();
+      const donnees = await lireJsonValide(reponse);
 
-      if (!reponse.ok) {
-        throw new Error(donnees.erreur || "Connexion impossible.");
-      }
-      if (typeof donnees.token !== "string" || !donnees.token) {
-        throw new Error("Le serveur n'a pas fourni de token.");
+      if (typeof donnees?.token !== "string" || !donnees.token) {
+        throw new Error("La connexion n'a pas pu être validée. Réessaie.");
       }
 
       localStorage.setItem("token_taverne", donnees.token);
       onLoginSuccess(donnees.token);
     } catch (err) {
-      setErreur(err.message || "Impossible de joindre le serveur.");
+      setErreur(err instanceof TypeError
+        ? "Impossible de contacter le serveur. Vérifie qu'il est démarré."
+        : err.message || "Connexion impossible. Réessaie.");
     } finally {
       setChargement(false);
     }
