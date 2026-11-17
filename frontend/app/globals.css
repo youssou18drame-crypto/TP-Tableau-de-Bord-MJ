@@ -27,3 +27,7 @@ button.secondaire { background: transparent; border: 1px solid #aebbd0; color: #
 .erreur { color: #ffb0b0; margin-top: 16px; }
 .succes { color: #94f0b9; margin-top: 16px; }
 @media (max-width: 760px) { .colonnes { grid-template-columns: 1fr; } .entete { flex-direction: column; } }
+
+/* Bouton de suppression des personnages */
+.carte .bouton-supprimer { margin-top: 12px; padding: 8px 12px; font-size: .9rem; border-color: #dd8a8a; color: #ffd0d0; }
+.carte .bouton-supprimer:hover { background: #502c35; }
