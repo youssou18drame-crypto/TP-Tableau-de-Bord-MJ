@@ -4,6 +4,34 @@ import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
+async function lireJsonValide(reponse, messageParDefaut) {
+  // Vérifier le statut HTTP AVANT de supposer que la réponse contient du JSON.
+  if (!reponse.ok) {
+    let message = messageParDefaut;
+    if (reponse.headers.get("content-type")?.includes("application/json")) {
+      try {
+        const details = await reponse.json();
+        if (typeof details?.erreur === "string") message = details.erreur;
+      } catch {
+        // Une page HTML ou un JSON malformé ne doit pas générer d'erreur technique à l'écran.
+      }
+    }
+    throw new Error(message);
+  }
+  try {
+    return await reponse.json();
+  } catch {
+    throw new Error("Réponse inattendue du serveur. Réessaie.");
+  }
+}
+
+function messagePourUtilisateur(err, defaut) {
+  if (err instanceof TypeError) {
+    return "Impossible de contacter le serveur. Vérifie qu'il est démarré.";
+  }
+  return err?.message || defaut;
+}
+
 export default function InventairePnj({ token, onSessionExpiree }) {
   const [pnjs, setPnjs] = useState([]);
   const [chargement, setChargement] = useState(true);
@@ -13,6 +41,7 @@ export default function InventairePnj({ token, onSessionExpiree }) {
   const [classe, setClasse] = useState("");
   const [niveau, setNiveau] = useState("1");
   const [envoi, setEnvoi] = useState(false);
+  const [suppressionId, setSuppressionId] = useState(null);
 
   useEffect(() => {
     const controleur = new AbortController();
@@ -29,17 +58,14 @@ export default function InventairePnj({ token, onSessionExpiree }) {
           onSessionExpiree();
           return;
         }
-        if (!reponse.ok) {
-          throw new Error(`Erreur HTTP ${reponse.status} lors du chargement.`);
-        }
-        const donnees = await reponse.json();
+        const donnees = await lireJsonValide(reponse, "Impossible de charger les PNJ.");
         if (!Array.isArray(donnees)) {
-          throw new Error("Format des PNJ incorrect.");
+          throw new Error("La liste des personnages est indisponible.");
         }
         setPnjs(donnees);
       } catch (err) {
-        if (err.name !== "AbortError") {
-          setErreur(err.message || "Impossible de charger les PNJ.");
+        if (err.name !== "AbortError" && !controleur.signal.aborted) {
+          setErreur(messagePourUtilisateur(err, "Impossible de charger les PNJ."));
         }
       } finally {
         if (!controleur.signal.aborted) setChargement(false);
@@ -50,13 +76,24 @@ export default function InventairePnj({ token, onSessionExpiree }) {
     return () => controleur.abort();
   }, [token, onSessionExpiree]);
 
+  function verifierSession() {
+    const tokenActuel = localStorage.getItem("token_taverne");
+    if (!tokenActuel || tokenActuel !== token) {
+      onSessionExpiree();
+      throw new Error("Session absente : reconnecte-toi.");
+    }
+    return tokenActuel;
+  }
+
   async function ajouterPnj(e) {
     e.preventDefault();
     setErreur("");
     setMessage("");
 
     const niveauNombre = Number(niveau);
-    if (!nom.trim() || !classe.trim() || !Number.isInteger(niveauNombre) ||
+    if (!nom.trim() || nom.trim().length > 100 ||
+        !classe.trim() || classe.trim().length > 100 ||
+        !Number.isInteger(niveauNombre) ||
         niveauNombre < 1 || niveauNombre > 2147483647) {
       setErreur("Indique un nom, une classe et un niveau entier positif.");
       return;
@@ -64,13 +101,7 @@ export default function InventairePnj({ token, onSessionExpiree }) {
 
     setEnvoi(true);
     try {
-      // Lire la valeur actuelle permet de détecter un token supprimé dans F12.
-      const tokenActuel = localStorage.getItem("token_taverne");
-      if (!tokenActuel || tokenActuel !== token) {
-        onSessionExpiree();
-        throw new Error("Session absente : reconnecte-toi.");
-      }
-
+      const tokenActuel = verifierSession();
       const reponse = await fetch(`${API_URL}/api/pnj`, {
         method: "POST",
         headers: {
@@ -88,12 +119,9 @@ export default function InventairePnj({ token, onSessionExpiree }) {
         onSessionExpiree();
         throw new Error("Session expirée ou refusée. Reconnecte-toi.");
       }
-      const donnees = await reponse.json();
-      if (!reponse.ok) {
-        throw new Error(donnees.erreur || `Erreur HTTP ${reponse.status}`);
-      }
-      if (!donnees.personnage) {
-        throw new Error("Réponse de création inattendue.");
+      const donnees = await lireJsonValide(reponse, "Impossible d'ajouter le personnage.");
+      if (!donnees?.personnage) {
+        throw new Error("Création non confirmée par le serveur. Réessaie.");
       }
 
       setPnjs((anciens) => [...anciens, donnees.personnage]);
@@ -102,9 +130,34 @@ export default function InventairePnj({ token, onSessionExpiree }) {
       setNiveau("1");
       setMessage("Le PNJ a rejoint la Taverne !");
     } catch (err) {
-      setErreur(err.message || "Impossible d'ajouter le personnage.");
+      setErreur(messagePourUtilisateur(err, "Impossible d'ajouter le personnage."));
     } finally {
       setEnvoi(false);
+    }
+  }
+
+  async function supprimerPnj(pnj) {
+    if (!window.confirm(`Supprimer définitivement ${pnj.nom} de l'inventaire ?`)) return;
+    setErreur("");
+    setMessage("");
+    setSuppressionId(pnj.id);
+    try {
+      const tokenActuel = verifierSession();
+      const reponse = await fetch(`${API_URL}/api/pnj/${pnj.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tokenActuel}` }
+      });
+      if (reponse.status === 401 || reponse.status === 403) {
+        onSessionExpiree();
+        throw new Error("Session expirée ou refusée. Reconnecte-toi.");
+      }
+      await lireJsonValide(reponse, "Impossible de supprimer le personnage.");
+      setPnjs((anciens) => anciens.filter((personnage) => personnage.id !== pnj.id));
+      setMessage(`${pnj.nom} a été supprimé de l'inventaire.`);
+    } catch (err) {
+      setErreur(messagePourUtilisateur(err, "Impossible de supprimer le personnage."));
+    } finally {
+      setSuppressionId(null);
     }
   }
 
@@ -126,6 +179,11 @@ export default function InventairePnj({ token, onSessionExpiree }) {
                 <h3>{pnj.nom}</h3>
                 <p>Classe : {pnj.classe}</p>
                 <p>Niveau : {pnj.niveau}</p>
+                <button type="button" className="secondaire bouton-supprimer"
+                  disabled={suppressionId !== null || envoi}
+                  onClick={() => supprimerPnj(pnj)}>
+                  {suppressionId === pnj.id ? "Suppression…" : "Supprimer"}
+                </button>
               </article>
             ))}
           </div>
@@ -145,7 +203,7 @@ export default function InventairePnj({ token, onSessionExpiree }) {
           <label htmlFor="niveau">Niveau</label>
           <input id="niveau" type="number" min="1" max="2147483647" required value={niveau}
             onChange={(e) => setNiveau(e.target.value)} />
-          <button type="submit" disabled={envoi}>
+          <button type="submit" disabled={envoi || suppressionId !== null}>
             {envoi ? "Enregistrement…" : "Ajouter le PNJ"}
           </button>
         </form>
