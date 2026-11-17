@@ -80,11 +80,11 @@ Ouvrir **http://localhost:3001** ; se connecter avec le compte de test créé pr
 - `GET /api/pnj` (JWT) : récupérer tous les personnages
 - `GET /api/pnj/:id` (JWT) : récupérer un personnage
 - `POST /api/pnj` (JWT) : enregistrer un personnage dans PostgreSQL
-- `DELETE /api/pnj/:id` (JWT) : **simulation uniquement**, aucune suppression réelle
+- `DELETE /api/pnj/:id` (JWT) : supprimer réellement un PNJ dans PostgreSQL (confirmation côté frontend)
 
 Les requêtes authentifiées utilisent `Authorization: Bearer <token>`.
 
-Le frontend conserve le JWT dans localStorage, affiche le tableau de bord après connexion, gère chargement/erreur, permet d'ajouter un PNJ et de se déconnecter.
+Le frontend conserve le JWT dans localStorage, affiche le tableau de bord après connexion, gère chargement/erreur, permet d'ajouter et de supprimer un PNJ et de se déconnecter.
 
 ## 6. Recette de validation pour le professeur
 
@@ -93,8 +93,9 @@ Le frontend conserve le JWT dans localStorage, affiche le tableau de bord après
 3. Se connecter avec le compte de test.
 4. Afficher la liste des PNJ.
 5. Ajouter un personnage et vérifier qu'il reste après F5.
-6. Supprimer le token avec les outils du navigateur puis essayer un POST : le refus 401 doit être géré sans crash.
-7. Tester une requête non authentifiée avec `curl -i http://localhost:3000/api/pnj` : HTTP 401 attendu.
+6. Supprimer un personnage avec le bouton « Supprimer » puis actualiser (la suppression doit persister).
+7. Supprimer le token avec les outils du navigateur puis essayer un POST : le refus 401 doit être géré sans crash.
+8. Tester une requête non authentifiée avec `curl -i http://localhost:3000/api/pnj` : HTTP 401 attendu.
 
 ## Remarques de sécurité
 
@@ -103,3 +104,11 @@ CORS limite les origines navigateur mais **ne remplace pas l'authentification**.
 ## Reproductibilité
 
 Le projet dépend d'une base PostgreSQL externe : le clone seul ne suffit pas sans la configuration privée, l'initialisation des tables et un compte test. La création de compte et le SQL d'initialisation sont fournis pour éviter une configuration manuelle.
+
+## Améliorations de robustesse après correction
+
+- Les formulaires vérifient le statut HTTP avant de lire le JSON, avec des erreurs utilisateur adaptées même en cas de réponse HTML ou non JSON.
+- L'API renvoie des erreurs JSON pour les requêtes invalides (`400`) ou trop volumineuses (`413`). La limite de corps est de 20 Ko.
+- `POST /api/login` est limité à **10 requêtes par IP toutes les 15 minutes**, en mémoire du processus Express. Après dépassement : HTTP `429`. Les compteurs sont perdus au redémarrage ; un stockage partagé est recommandé en production.
+- `POST /api/pnj` applique `.trim()` avant de valider la longueur des champs.
+- Le frontend propose un bouton « Supprimer » avec confirmation. **Attention : contrairement à l'ancienne simulation, cette version efface réellement le PNJ dans PostgreSQL.** Pour la démonstration, utiliser un personnage de test.
